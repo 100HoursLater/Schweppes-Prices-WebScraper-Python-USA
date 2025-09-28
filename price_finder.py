@@ -6,15 +6,14 @@ from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.table import Table
 
-# --- Spoofing Configuration ---
-# A list of realistic, recent User-Agent strings to rotate through.
+
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/117.0',
 ]
 
-# Common headers sent by real browsers. We'll set these in the browser context.
+
 COMMON_HEADERS = {
     'Accept-Language': 'en-US,en;q=0.9',
     'Accept-Encoding': 'gzip, deflate, br',
@@ -22,7 +21,7 @@ COMMON_HEADERS = {
     'Connection': 'keep-alive',
 }
 
-# --- Helper Functions --- (Mostly unchanged)
+
 def parse_price(price_str):
     if not price_str: return None
     match = re.search(r'(\d+\.\d{2})', price_str)
@@ -41,20 +40,20 @@ def calculate_price_per_unit(name, price):
         if liters > 0: return price / liters, f"${price / liters:.2f}/L"
     return price, "N/A"
 
-# --- NEW Browser-Based Scraper Functions ---
+
 
 def scrape_site(page, retailer, url, search_term, selectors):
     """A generic function to scrape a site using Playwright."""
     print(f"[*] Searching {retailer} for '{search_term}'...")
     results = []
     try:
-        # Go to the URL, pretending to be referred from Google for extra stealth
+        
         page.goto(url, wait_until='domcontentloaded', timeout=20000, referer="https://www.google.com/")
         
-        # Wait for a random, human-like duration for JS to load content
+        
         time.sleep(random.uniform(2, 5))
 
-        # Get the final, JS-rendered HTML
+     
         html = page.content()
         soup = BeautifulSoup(html, 'html.parser')
         
@@ -81,7 +80,7 @@ def scrape_site(page, retailer, url, search_term, selectors):
     print(f"[*] Found {len(results)} results on {retailer}.")
     return results
 
-# --- Main Application Logic ---
+
 if __name__ == "__main__":
     console = Console()
     console.print("\n[bold magenta]Schweppes Price Finder (v3 - Ultimate Spoofing Edition)[/bold magenta] :ninja:")
@@ -90,7 +89,7 @@ if __name__ == "__main__":
     if not search_query:
         search_query = "Schweppes Ginger Ale 12 pack"
 
-    # Define the unique selectors for each site
+
     SITES = {
         "Amazon": {
             "url": f"https://www.amazon.com/s?k={search_query.replace(' ', '+')}",
@@ -119,23 +118,23 @@ if __name__ == "__main__":
     }
 
     all_results = []
-    # This block manages the browser lifecycle automatically
+   
     with sync_playwright() as p:
-        # Launch the browser. Set headless=False to watch it work (good for debugging)
+       
         browser = p.chromium.launch(headless=True)
         
-        # Create a new "incognito" browser context with our spoofed headers
+       
         context = browser.new_context(
             user_agent=random.choice(USER_AGENTS),
             extra_http_headers=COMMON_HEADERS,
-            java_script_enabled=True, # Ensure JS is on
+            java_script_enabled=True, 
         )
         page = context.new_page()
 
         for retailer, config in SITES.items():
             results = scrape_site(page, retailer, config['url'], search_query, config['selectors'])
             all_results.extend(results)
-            time.sleep(random.uniform(1, 3)) # Wait between scraping different sites
+            time.sleep(random.uniform(1, 3))
 
         browser.close()
 
@@ -159,4 +158,5 @@ if __name__ == "__main__":
         for item in sorted_results:
             table.add_row(item['retailer'], item['name'], f"${item['price']:.2f}", item['unit_price_str'])
         
+
         console.print(table)
