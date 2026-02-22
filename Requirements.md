@@ -6,4 +6,8 @@ Windows 11 / MacOS 26 Tahoe
 
 Beautiful Soup 
 
-Playwright 
+Playwright Stealth
+
+---
+
+ pip install playwright-stealth
