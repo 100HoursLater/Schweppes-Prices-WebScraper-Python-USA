@@ -2,161 +2,104 @@ import time
 import random
 import re
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright_stealth import stealth  # Corrected import
 from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.table import Table
 
-
-USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/117.0',
-]
-
-
-COMMON_HEADERS = {
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Connection': 'keep-alive',
-}
-
+console = Console()
 
 def parse_price(price_str):
     if not price_str: return None
-    match = re.search(r'(\d+\.\d{2})', price_str)
+    # Handles complex strings like "$12.99 ($1.08 / Count)"
+    match = re.search(r'\$(\d+\.\d{2})', price_str)
     return float(match.group(1)) if match else None
 
-def calculate_price_per_unit(name, price):
-    if not price or not name: return None, "N/A"
-    name_lower = name.lower()
-    match = re.search(r'(\d+)\s*(?:-?pack|pk|cans|count)', name_lower)
-    if match:
-        count = int(match.group(1))
-        if count > 0: return price / count, f"${price / count:.2f}/can"
-    match = re.search(r'(\d+(\.\d+)?)\s*(l|liter)', name_lower)
-    if match:
-        liters = float(match.group(1))
-        if liters > 0: return price / liters, f"${price / liters:.2f}/L"
-    return price, "N/A"
-
-
-
-def scrape_site(page, retailer, url, search_term, selectors):
-    """A generic function to scrape a site using Playwright."""
-    print(f"[*] Searching {retailer} for '{search_term}'...")
+def scrape_site(browser_context, retailer, url, selectors):
+    """Scrapes with corrected stealth and human-like movement."""
+    console.print(f"[bold blue][*][/bold blue] Accessing {retailer}...")
+    page = browser_context.new_page()
+    
+    # The actual, non-hallucinated stealth function
+    stealth(page) 
+    
     results = []
     try:
+        page.goto(url, wait_until='domcontentloaded', timeout=30000)
         
-        page.goto(url, wait_until='domcontentloaded', timeout=20000, referer="https://www.google.com/")
-        
-        
-        time.sleep(random.uniform(2, 5))
+        # Human-like behavior: Scroll down to trigger lazy loading
+        page.mouse.wheel(0, 600)
+        time.sleep(random.uniform(1.5, 3))
 
-     
-        html = page.content()
-        soup = BeautifulSoup(html, 'html.parser')
-        
-        items = soup.select(selectors['item_container'])
-        if not items:
-            print(f"[!] {retailer}: No result containers found with selector '{selectors['item_container']}'. Site structure may have changed.")
+        # Wait for the specific container so we don't scrape an empty page
+        try:
+            page.wait_for_selector(selectors['item_container'], timeout=10000)
+        except PlaywrightTimeoutError:
+            console.print(f"[red][!] {retailer}: Timeout waiting for selectors. Possible bot block.[/red]")
             return []
 
+        soup = BeautifulSoup(page.content(), 'html.parser')
+        items = soup.select(selectors['item_container'])
+
         for item in items[:5]:
-            name_element = item.select_one(selectors['name'])
-            price_element = item.select_one(selectors['price'])
+            name_el = item.select_one(selectors['name'])
+            price_el = item.select_one(selectors['price'])
             
-            if name_element and price_element:
-                name = name_element.get_text(strip=True)
-                price = parse_price(price_element.get_text(strip=True))
-                if name and price and search_term.lower().split()[0] in name.lower():
+            if name_el and price_el:
+                name = name_el.get_text(strip=True)
+                price = parse_price(price_el.get_text(strip=True))
+                if name and price:
                     results.append({'retailer': retailer, 'name': name, 'price': price})
                     
-    except PlaywrightTimeoutError:
-        print(f"[!] {retailer}: Page timed out. The site might be slow or blocking.")
     except Exception as e:
-        print(f"[!] An unexpected error occurred with {retailer}: {e}")
+        console.print(f"[red][!] Error on {retailer}: {str(e)[:50]}...[/red]")
+    finally:
+        page.close()
         
-    print(f"[*] Found {len(results)} results on {retailer}.")
     return results
 
-
 if __name__ == "__main__":
-    console = Console()
-    console.print("\n[bold magenta]Schweppes Price Finder (v3 - Ultimate Spoofing Edition)[/bold magenta] :ninja:")
-    
-    search_query = input("\n> What Schweppes product are you looking for?\n  ")
-    if not search_query:
-        search_query = "Schweppes Ginger Ale 12 pack"
-
+    search_query = input("Search for: ") or "Schweppes Ginger Ale"
 
     SITES = {
         "Amazon": {
             "url": f"https://www.amazon.com/s?k={search_query.replace(' ', '+')}",
             "selectors": {
                 "item_container": 'div[data-component-type="s-search-result"]',
-                "name": 'span.a-size-medium, span.a-size-base-plus',
-                "price": 'span.a-price',
+                "name": 'h2 a span',
+                "price": 'span.a-price span.a-offscreen',
             },
         },
         "Walmart": {
-            "url": f"https://www.walmart.com/search?q={search_query.replace(' ', '%20')}",
+            "url": f"https://www.walmart.com/search?q={search_query.replace(' ', '+')}",
             "selectors": {
-                "item_container": 'div[data-item-id]',
+                "item_container": 'div[data-testid="list-view-node"]',
                 "name": 'span[data-automation-id="product-title"]',
                 "price": 'div[data-automation-id="product-price"]',
             },
-        },
-        "Target": {
-             "url": f"https://www.target.com/s?searchTerm={search_query.replace(' ', '%20')}",
-             "selectors": {
-                "item_container": '[data-test="product-card"]',
-                "name": '[data-test="product-title"]',
-                "price": '[data-test="current-price"]',
-             },
-        },
+        }
     }
 
-    all_results = []
-   
     with sync_playwright() as p:
-       
-        browser = p.chromium.launch(headless=True)
-        
-       
+        # headless=False is the #1 way to avoid being flagged by Walmart/Amazon
+        browser = p.chromium.launch(headless=False) 
         context = browser.new_context(
-            user_agent=random.choice(USER_AGENTS),
-            extra_http_headers=COMMON_HEADERS,
-            java_script_enabled=True, 
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
         )
-        page = context.new_page()
 
+        all_results = []
         for retailer, config in SITES.items():
-            results = scrape_site(page, retailer, config['url'], search_query, config['selectors'])
-            all_results.extend(results)
-            time.sleep(random.uniform(1, 3))
+            all_results.extend(scrape_site(context, retailer, config['url'], config['selectors']))
+            time.sleep(random.uniform(2, 4))
 
         browser.close()
 
-    if not all_results:
-        console.print("\n[bold red]No results found across any retailers.[/bold red]")
-        console.print("[yellow]This could mean the product is out of stock, or all sites have changed their HTML structure.[/yellow]")
-        console.print("[yellow]Try running with a broader search term (e.g., 'Schweppes Ginger Ale').[/yellow]")
-    else:
-        processed_results = [
-            {**res, **dict(zip(['unit_price', 'unit_price_str'], calculate_price_per_unit(res['name'], res['price'])))}
-            for res in all_results
-        ]
-        sorted_results = sorted(processed_results, key=lambda x: x['unit_price'] if x['unit_price'] is not None else float('inf'))
-
-        table = Table(title=f"\n:moneybag: Price Comparison for '{search_query}'", show_header=True, header_style="bold green")
-        table.add_column("Retailer", style="dim", width=12)
-        table.add_column("Product Name")
-        table.add_column("Price", justify="right")
-        table.add_column("Price Per Unit", justify="right", style="bold yellow")
-
-        for item in sorted_results:
-            table.add_row(item['retailer'], item['name'], f"${item['price']:.2f}", item['unit_price_str'])
-        
-
+    # Display Results
+    if all_results:
+        table = Table(title=f"Results for {search_query}")
+        table.add_column("Retailer", style="cyan")
+        table.add_column("Product")
+        table.add_column("Price", justify="right", style="green")
+        for r in sorted(all_results, key=lambda x: x['price']):
+            table.add_row(r['retailer'], r['name'][:50], f"${r['price']:.2f}")
         console.print(table)
